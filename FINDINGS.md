@@ -124,7 +124,7 @@ Agents are event-driven. They receive signals, respond to queries, and coordinat
 
 ### 2.7 The Critic Incorporation Matrix
 
-The ISA v3 draft incorporates 19 of 22 critic recommendations:
+The ISA v3 draft incorporates 16 of 22 critic recommendations:
 
 | Category | Total | Implemented | Deferred |
 |----------|-------|-------------|----------|

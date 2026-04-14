@@ -253,7 +253,7 @@ Round 2 ISA Critique (all 4 models)
                                                    Collections, Debug moved to extensions)
 ```
 
-The ISA v3 specification (`03-isa-v3-draft/isa-v3-draft.md`) incorporates **19 of 22 critic recommendations**, with only 3 deferred to future extension spaces. Full backward compatibility with v2 is maintained — all v2 bytecode runs unmodified on v3 runtimes.
+The ISA v3 specification (`03-isa-v3-draft/isa-v3-draft.md`) incorporates **16 of 22 critic recommendations**, with 6 deferred to future extension spaces. Full backward compatibility with v2 is maintained — all v2 bytecode runs unmodified on v3 runtimes.
 
 Key v3 innovations:
 - **0xFF escape prefix** provides 255 extension spaces × 256 sub-opcodes = 65,280 extended opcodes
