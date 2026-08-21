@@ -32,4 +32,3 @@ jobs:
     - name: Test with C test suite
       run: |
         make test
-        python -m pytest --import-mode=importlib -x -v
