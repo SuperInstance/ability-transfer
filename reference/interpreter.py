@@ -153,6 +153,38 @@ for op in CoreOp:
     OPCODE_VALUES[op.name] = int(op)
 
 
+# ── Fuel governance ──────────────────────────────────────────────────────────
+
+class FuelError(RuntimeError):
+    """Base class for fuel-governance traps raised by the VM.
+
+    Hosts embedding untrusted modules (e.g. the canon-verifier) can catch
+    this single class to handle any fuel-policy trap uniformly.
+    """
+
+
+class FuelSetDenied(FuelError):
+    """FUEL_SET executed on a VM whose host did not grant the capability
+    (``FluxVM(allow_fuel_set=False)``, the default)."""
+
+
+class FuelSetViolation(FuelError):
+    """FUEL_SET granted, but the requested budget would raise the active
+    one (including the ``0 = unlimited`` escape hatch)."""
+
+
+class ExitReason(IntEnum):
+    """Structured termination reason surfaced on ``vm.exit_reason``.
+
+    Distinguishes a clean HALT from fuel exhaustion and the ``max_steps``
+    ceiling without inventing full draft-style TRAP_* machinery.
+    """
+    RUNNING = 0      # mid-run, or a trap propagated before termination
+    HALT = 1         # clean halt (HALT opcode / RET with empty call stack)
+    OUT_OF_FUEL = 2  # per-instruction meter reached zero
+    MAX_STEPS = 3    # run() ceiling — previously a silent stop
+
+
 # ── VM State ─────────────────────────────────────────────────────────────────
 
 @dataclass
@@ -168,6 +200,8 @@ class VMState:
     confidence: float = 1.0
     channels: Dict[int, List[int]] = field(default_factory=list)
     contexts: Dict[int, 'VMState'] = field(default_factory=dict)
+    # Termination reason (ExitReason, stored as int for serializability).
+    exit_reason: int = 0
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -177,6 +211,7 @@ class VMState:
             "capabilities": self.capabilities,
             "fuel": self.fuel,
             "confidence": self.confidence,
+            "exit_reason": int(self.exit_reason),
         }
 
 
@@ -197,9 +232,16 @@ class FluxVM:
         assert vm.stack[-1] == 30
     """
 
-    def __init__(self, memory_size: int = 256, stack_size: int = 256):
+    def __init__(self, memory_size: int = 256, stack_size: int = 256,
+                 allow_fuel_set: bool = False):
         self.memory_size = memory_size
         self.stack_size = stack_size
+        # Fuel governance: host-construction policy, deliberately NOT reset
+        # per-run. Modules may only touch the fuel budget if the host grants
+        # it here. Default-deny: an untrusted module must never be able to
+        # rewrite its own meter.
+        self._allow_fuel_set = allow_fuel_set
+        self.exit_reason = ExitReason.RUNNING
         self.memory = bytearray(memory_size)
         self.stack: List[int] = []
         self.pc: int = 0
@@ -223,6 +265,7 @@ class FluxVM:
         self.program = program
         self.pc = 0
         self.halted = False
+        self.exit_reason = ExitReason.RUNNING
 
     def reset(self) -> None:
         """Reset VM to initial state."""
@@ -240,6 +283,7 @@ class FluxVM:
         self._context_counter = 0
         self._spawned.clear()
         self._trace.clear()
+        self.exit_reason = ExitReason.RUNNING
 
     # ── Stack operations ────────────────────────────────────────────────────
 
@@ -278,12 +322,48 @@ class FluxVM:
     # ── Fuel management ─────────────────────────────────────────────────────
 
     def _check_fuel(self) -> None:
-        """Decrement fuel; halt if exhausted."""
+        """Decrement fuel; on exhaustion halt with a STRUCTURED reason.
+
+        Fuel-death is distinguishable from a clean HALT via
+        ``vm.exit_reason == ExitReason.OUT_OF_FUEL``. State (pc/stack/memory)
+        is left intact and recoverable via ``snapshot()`` for forensics.
+        """
         if self.fuel > 0:
             self.fuel -= 1
             if self.fuel <= 0:
                 self.halted = True
+                self.exit_reason = ExitReason.OUT_OF_FUEL
                 self._log(f"FUEL EXHAUSTED at pc=0x{self.pc:04x}")
+
+    def _apply_fuel_set(self, new_fuel: int) -> None:
+        """Governance check for the SECURITY FUEL_SET opcode.
+
+        Policy:
+          * Capability gate: FUEL_SET traps with ``FuelSetDenied`` unless the
+            host constructed the VM with ``allow_fuel_set=True`` (default
+            deny). The denial is a TRAP (loud), not a silent no-op, so a
+            module can never proceed assuming a budget it does not actually
+            have — silent success would desynchronize module expectation
+            from VM behavior and make the immortal-loop exploit
+            unobservable.
+          * Monotonicity: a module may LOWER an active budget but never
+            raise it. ``0`` means unlimited, so FUEL_SET 0 while a budget
+            is active is an escape attempt and traps with
+            ``FuelSetViolation``. When no budget is active (fuel == 0), a
+            module may still self-limit to a finite budget.
+        """
+        if not self._allow_fuel_set:
+            raise FuelSetDenied(
+                "FUEL_SET denied: host has not granted the fuel-set "
+                f"capability (requested={new_fuel}); construct "
+                "FluxVM(allow_fuel_set=True) to permit module-set budgets"
+            )
+        if self.fuel > 0 and (new_fuel == 0 or new_fuel > self.fuel):
+            raise FuelSetViolation(
+                f"FUEL_SET {new_fuel} would raise the active budget "
+                f"{self.fuel}; modules may only lower their budget"
+            )
+        self.fuel = new_fuel
 
     # ── Fetch helpers ───────────────────────────────────────────────────────
 
@@ -409,7 +489,7 @@ class FluxVM:
 
         elif sub == SecurityExt.FUEL_SET:
             fuel = self._fetch16()
-            self.fuel = fuel
+            self._apply_fuel_set(fuel)
             self._log(f"FUEL_SET -> {fuel}")
 
         elif sub == SecurityExt.IDENTITY_GET:
@@ -748,16 +828,27 @@ class FluxVM:
 
     def run(self, max_steps: int = 100000) -> int:
         """
-        Run until HALT or max_steps.
+        Run until HALT, fuel exhaustion, or max_steps.
 
         Returns:
             Number of instructions executed.
+
+        Termination is structurally distinguishable via ``vm.exit_reason``:
+        ``HALT`` (clean), ``OUT_OF_FUEL`` (budget death), or ``MAX_STEPS``
+        (ceiling — previously a silent stop). A trap raised from ``step()``
+        (e.g. ``FuelSetDenied``) propagates to the host and leaves
+        ``exit_reason`` at ``RUNNING``.
         """
         steps = 0
         while not self.halted and steps < max_steps:
             if not self.step():
                 break
             steps += 1
+        if self.halted:
+            if self.exit_reason == ExitReason.RUNNING:
+                self.exit_reason = ExitReason.HALT
+        else:
+            self.exit_reason = ExitReason.MAX_STEPS
         return steps
 
     def snapshot(self) -> VMState:
@@ -769,6 +860,7 @@ class FluxVM:
             capabilities=dict(self.capabilities),
             fuel=self.fuel,
             confidence=self.confidence,
+            exit_reason=int(self.exit_reason),
         )
 
     def restore(self, state: VMState) -> None:
@@ -781,6 +873,7 @@ class FluxVM:
         self.capabilities = dict(state.capabilities)
         self.fuel = state.fuel
         self.confidence = state.confidence
+        self.exit_reason = ExitReason(state.exit_reason)
 
 
 # ── Assembler ───────────────────────────────────────────────────────────────
