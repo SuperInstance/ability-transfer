@@ -347,3 +347,42 @@ Where models disagreed, revealing areas of uncertainty or genuine trade-offs.
 ---
 
 *This document is a living synthesis. As new simulation rounds complete, findings will be added to the appropriate sections. Convergence and divergence points will be updated. Recommendations will be revised based on implementation experience.*
+
+---
+
+## Section 7: Round 4 — The Frozen Field, Measured (2026-09-26)
+
+**Source**: kimi1, `tests/probe_repo_extract.c`, `tests/extract_to_artifact.py`, `tests/test_round4_probe.sh`
+**Round**: 4
+
+### 7.1 From Doctrine to Instrument (F-06)
+
+Rounds 1–3 established that a repo is a *frozen field of attention* (F-03) and a *dojo* (F-05) — but the claim lived in prose. Round 4 makes it **measurable and offerable**: `probe_repo_extract` reads a live git repo through four lenses and emits a `Skill`:
+
+| Lens | Git command | Maps to |
+|------|-------------|---------|
+| Ontology | `ls-tree -r --name-only` | top-level realms → tags; avg depth → structural complexity |
+| Rhythm | `log --format=%ct` | commits/90 days + span → mastery score |
+| Judgment | `log --name-only` | revision ratio (re-touched files) → forge stage |
+| Discipline | file names | test-file ratio → mastery component |
+
+The Skill is then wrapped in a live `OFFER` transfer message, serialized through `transfer_serialize` / `transfer_deserialize` (308 bytes for this repo — the wire payload a git-agent shell would carry), and emitted as one `SKILL_EXTRACT` JSON line.
+
+### 7.2 The Artifact Becomes Gauge-Checkable (F-07)
+
+`extract_to_artifact.py` turns the line into a durable artifact (`at.skill.json`) with `provenance` (source repo + commit) and `evidence` (metrics, wire round-trip) blocks. A gauge schema (`schemas/at.skill.schema.json`, discovered via `.gauge.json`) pins the offerable core: required fields, types, category enum, round-trip verdict. **Measured end-to-end on this repo and on a second fleet repo: both artifacts validate `ok [at.skill]`.**
+
+This closes a loop the philosophy predicted: the repo transfers ability not by being read *about*, but by being *checked against*. The schema is the dojo's building code.
+
+### 7.3 Implications
+
+- **Transfer is now bidirectional-verifiable**: an apprentice agent can clone a shell, extract its `at.skill.json`, and *gauge-check* it against the published schema — a forge receipt for pollination (matches the git-agent shell breeding cycle).
+- **Mastery is a function of history shape, not claims**: the probe's mastery score derives only from commit rhythm, ontology, discipline, and revision patterns. A repo cannot lie to it without lying to git itself.
+- **The exercises are generated, not authored**: four forge-stage exercises (map-the-ontology, read-the-rhythm, hot-spot-verdict, cold-realm-audit) are derived from whatever field is measured — the Socratic disruption F-04 demands is seeded per-repo, not copy-pasted.
+- **Self-measurement is the baseline**: this repo's own extraction (30 commits, 7 realms, 43% revision ratio, TEMPERED) is the regression test — the dojo grades itself on every `make test`.
+
+### 7.4 Honest Limits
+
+- Metrics reward commit *burst* over span (this repo's 30 commits landed in one day → mastery 1). Seniority needs a saturation curve before cross-agent comparison is fair.
+- The probe shells out to `git` via popen — fine for a lab probe, but a git-agent runtime should use libgit2 for sandboxing.
+- Gauge validation currently requires a local gauge checkout (PYTHONPATH); once gauge's own PRs land on main, `--gauge` becomes `pip install gauge`.
