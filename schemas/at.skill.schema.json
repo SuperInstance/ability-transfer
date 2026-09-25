@@ -1,0 +1,31 @@
+{
+  "name": "at.skill",
+  "description": "Extracted agent ability artifact (Forge round 4): repo-shaped skill with provenance + evidence. Unknown fields (metrics, provenance, evidence) pass — the schema pins the offerable core.",
+  "required": ["schema", "name", "category", "mastery", "forge_stage", "description", "tags", "exercises", "learning_path", "offer", "wire_roundtrip", "wire_bytes"],
+  "types": {
+    "schema": "string",
+    "name": "string",
+    "category": "string",
+    "mastery": "number",
+    "forge_stage": "number",
+    "description": "string",
+    "tags": "array",
+    "exercises": "array",
+    "learning_path": "array",
+    "offer": "object",
+    "wire_roundtrip": "string",
+    "wire_bytes": "number",
+    "metrics": "object",
+    "provenance": "object",
+    "evidence": "object"
+  },
+  "enums": {
+    "schema": ["at.skill/v1"],
+    "category": ["cognitive", "behavioral", "technical", "creativity", "judgment", "metalearning", "adaptation"],
+    "wire_roundtrip": ["PASS", "FAIL"]
+  },
+  "patterns": {
+    "name": "^[a-z0-9][a-z0-9-]{1,127}$"
+  },
+  "all_of": [["metrics", "provenance", "evidence"]]
+}

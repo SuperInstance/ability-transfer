@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.0] - 2026-09-26
+
+### Added — Round 4: The Frozen Field, Measured
+- **`tests/probe_repo_extract.c`** — repo → Skill extractor. Reads a live git repo's
+  ontology (top-level realms, depth), commit rhythm (cadence, span), judgment
+  (revision ratio of hot-spot files), and discipline (test-file ratio); scores
+  mastery deterministically; emits one `SKILL_EXTRACT` JSON line containing the
+  full Skill (tags, 4 forge-stage exercises, contexts, deps), a live `OFFER`
+  transfer message, and a real `transfer_serialize`/`deserialize` wire round-trip.
+- **`tests/extract_to_artifact.py`** — SKILL_EXTRACT line → durable `at.skill.json`
+  artifact with `provenance` (source repo + commit) and `evidence` (metrics,
+  wire verdict) blocks; optional `--gauge` runs SuperInstance/gauge against the
+  repo-carried schema. Verified end-to-end on this repo and a second fleet repo
+  (both `ok [at.skill]`).
+- **`schemas/at.skill.schema.json` + `.gauge.json`** — gauge schema pinning the
+  offerable core (required fields, types, category enum, round-trip verdict).
+  Repo-carried: any consumer repo validates without waiting on gauge releases.
+- **`tests/test_round4_probe.sh`** — 11-assertion regression: schema pin, wire
+  round-trip, OFFER type, learning path walks deps, 4 ordered forge stages,
+  real metrics, realms frozen into tags. Self-hosts: this repo grades its own
+  dojo on every `make test`.
+- **Makefile** — `probe_repo_extract` target; `make test` now runs both suites
+  (28/28 C tests + round-4 probe).
+- **FINDINGS.md Section 7** — F-06 (doctrine → instrument), F-07 (gauge-checkable
+  artifacts), implications for bidirectional-verifiable shell pollination, and
+  honest limits (burst-bias in mastery, popen→libgit2, gauge install path).
+
+### Doctrine
+Round 4 operationalizes Round 1's F-03/F-05: the repo-as-frozen-attention-field
+is no longer only prose — it is a measured, offerable, schema-checked artifact.
+Transfer becomes verifiable in both directions: clone the shell, extract,
+gauge-check the receipt.
+
+---
+
 ## [0.4.0] - 2026-04-14
 
 ### Added
